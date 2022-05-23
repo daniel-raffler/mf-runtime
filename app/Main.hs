@@ -1,3 +1,12 @@
+-- mf-runtime
+--
+-- Licensed under Creative Commons Legal Code
+-- Daniel Raffler 2022
+--
+-- Abstract machine for a lazy functional language
+-- Based on the paper "Übersetzerbau – Abstrakte Maschinen"
+-- by François Bry and Norbert Eisinger
+
 module Main where
 
 import Debug.Trace
