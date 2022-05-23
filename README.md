@@ -1,6 +1,6 @@
 # mf-runtime
 
-Abstract machine for a lazy functional language
+Abstract machine for a lazy functional language  
 Based on the paper "Übersetzerbau – Abstrakte Maschinen" by François Bry and Norbert Eisinger
 
 See their publication at
