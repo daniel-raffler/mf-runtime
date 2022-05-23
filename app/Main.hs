@@ -289,7 +289,7 @@ showState (n, (op, State heap stack addr)) =
 
 main :: IO ()
 main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
-  where arity = Map.fromList [("==",2),("+",2),("if",3)]
+  where arity = Map.fromList [("*",2),("+",2),("if",3)]
 
 {-
 p1 :: Program
@@ -319,7 +319,7 @@ p1 =
     Return
    ]
 -}
-{-
+
 p1 :: Program
 p1 =
   Program
@@ -382,7 +382,7 @@ p1 =
     Call,
     Return
    ]
--}
+
 {-
 p1 :: Program
 p1 =
@@ -543,7 +543,7 @@ p1 =
     Call,
     Return
    ]
-
+-}
 {-    
 p1 :: Program
 p1 =
