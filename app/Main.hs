@@ -279,7 +279,7 @@ showState (0, (op, State heap stack addr)) =
   show 0 ++ ":\n" ++
   "  stack: " ++ "undefined\n" ++
   showBindings heap ++ "\n" ++
-  show op ++ " (@" ++ show 0 ++ ")\n"
+  show op ++ " (@" ++ show 0 ++ ")"
 
 showState (n, (op, State heap stack addr)) =
   "\n\n" ++ show n ++ ":\n" ++
