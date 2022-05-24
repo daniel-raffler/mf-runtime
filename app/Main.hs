@@ -149,7 +149,7 @@ applyOp2 heap op (Ref a) (Ref b) =
               opInt ">"  = (>)
               opInt ">=" = (>)
       
-      applyInt op n m = trace (show op ++ show n ++ show m) undefined
+      --applyInt op n m = trace (show op ++ show n ++ show m) undefined
       applyBool (Op op) (Val AsBool n) (Val AsBool m)
         = alloc heap $ Val AsBool $ toInt $ (opBool op) (toBool n) (toBool m)
         where opBool :: [Char] -> Bool -> Bool -> Bool
