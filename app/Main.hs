@@ -88,6 +88,7 @@ data Opcode
   | Update Args
   | Return
   | Halt
+  | NoOp
   deriving (Show)
 
 newtype Table  = Table  (Map Var Info)
@@ -207,10 +208,10 @@ evalStep arity global (State heap stack addr) op =
         Val typ val -> State heap stack addr
         Def (Info arity entry) -> State heap stack' entry
           where stack' = push stack $ Cont addr
-        Pre op 1 -> State heap st2 10
+        Pre op 1 -> State heap st2 12
           where st1 = push stack $ Cont addr
                 st2 = push st1 $ Op op
-        Pre op 2 -> State heap st2 16
+        Pre op 2 -> State heap st2 18
           where st1 = push stack $ Cont addr
                 st2 = push st1 $ Op op
         Pre "if" _ -> State heap stack' 4
@@ -220,7 +221,7 @@ evalStep arity global (State heap stack addr) op =
     Operator N -> State heap st2 addr
       where -- stack: [val,ret,f,(- arg),(- arg1),(- arg2)]
             [val,ret,arg1,arg2] = map (peek stack) [0,1,4,5]
-            cl = applyIf heap val arg2 arg2
+            cl = applyIf heap val arg1 arg2
             stack' = popK stack 5
             st1 = push stack' ret
             st2 = push st1 $ Ref cl
@@ -258,6 +259,8 @@ evalStep arity global (State heap stack addr) op =
       where [ret, Cont addr'] = map (peek stack) [0,1]
             st1 = popK stack 2
             st2 = push st1 ret
+    
+    NoOp -> State heap stack addr
 
 evalAll :: Map Var Int -> Global -> Map Int Opcode -> State -> [(Opcode,State)]
 evalAll arity global mp st@(State heap stack addr) =
@@ -289,8 +292,10 @@ showState (n, (op, State heap stack addr)) =
 
 main :: IO ()
 main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
-  where arity = Map.fromList [("*",2),("+",2),("if",3)]
+  where arity = Map.fromList [("*",2),("+",2),("==",2),("if",3)]
 
+-- second a b = b
+-- main = second 1 2
 {-
 p1 :: Program
 p1 =
@@ -320,6 +325,62 @@ p1 =
    ]
 -}
 
+-- main = if False then 3 else 1
+{-
+p1 :: Program
+p1 =
+  Program
+   (Table $ Map.fromList [
+       ("main", Info 0 25)
+       ]
+   )
+   [Reset,
+    Pushfun "main",
+    Call,
+    Halt,
+    
+    Pushparam 1,
+    Unwind,
+    Call,
+    Operator N,
+    Update N,
+    Return,
+    
+    Pushparam 2,
+    Unwind,
+    Call,
+    Operator (F 1),
+    Update N,
+    Return,
+    
+    Pushparam 2,
+    Unwind,
+    Call,
+    Pushparam 4,
+    Unwind,
+    Call,
+    Operator (F 2),
+    Update N,
+    Return,
+    
+    Pushval AsInt 1,
+    Pushval AsInt 3,
+    Pushval AsBool (toInt False),
+    Pushpre "if",
+    Makeapp,
+    Makeapp,
+    Makeapp,
+    Update (F 0),
+    Slide 1,
+    Unwind,
+    Call,
+    Return
+   ]
+-}
+
+-- quadrat x = x*x
+-- main = quadrat (quadrat (3*1))
+{-
 p1 :: Program
 p1 =
   Program
@@ -332,7 +393,7 @@ p1 =
     Call,
     Halt,
     
-    Pushparam 2,
+    Pushparam 1,
     Unwind,
     Call,
     Operator N,
@@ -382,15 +443,22 @@ p1 =
     Call,
     Return
    ]
+-}
 
-{-
+
+-- main = add 8 17
+-- add a b = if a == 0 then b else suc (add (pre a) b)
+-- pre a = -1 + a
+-- suc a =  1 + a
+
 p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
-       ("main", Info 0 57),
-       ("add",  Info 2 35),
-       ("pre",  Info 1 25)]
+       ("main", Info 0 71),
+       ("add",  Info 2 47),
+       ("suc",  Info 1 37),
+       ("pre",  Info 1 27)]
    )
    [Reset,
     Pushfun "main",
@@ -402,6 +470,8 @@ p1 =
     Call,
     Operator N,
     Update N,
+    Unwind,
+    Call,
     Return,
     
     Pushparam 2,
@@ -432,12 +502,25 @@ p1 =
     Call,
     Return,
     
+    Pushval AsInt 1,
+    Pushparam 2,
+    Pushpre "+",
+    Makeapp,
+    Makeapp,
+    Update (F 1),
+    Slide 2,
+    Unwind,
+    Call,
+    Return,
+    
     Pushparam 2,
     Pushparam 2,
     Pushfun "pre",
     Makeapp,
     Pushfun "add",
     Makeapp,
+    Makeapp,
+    Pushfun "suc",
     Makeapp,
     Pushparam 3,
     Pushval AsInt 0,
@@ -455,8 +538,8 @@ p1 =
     Call,
     Return,
     
-    Pushval AsInt 3,
-    Pushval AsInt 2,
+    Pushval AsInt 17,
+    Pushval AsInt 8,
     Pushfun "add",
     Makeapp,
     Makeapp,
@@ -466,145 +549,3 @@ p1 =
     Call,
     Return
    ]
-    -}
-{-
-p1 :: Program
-p1 =
-  Program
-   (Table $ Map.fromList [
-       ("main", Info 0 67),
-       ("pre",  Info 1 25)]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 1,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushparam 1,
-    Pushval AsInt 0,
-    Pushpre "==",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 1,
-    Pushval AsInt 1,
-    Pushpre "-",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Pushparam 2,
-    Pushfun "pre",
-    Makeapp,
-    Pushparam 3,
-    Pushfun "isZero",
-    Makapp,
-    Pushpre "if",
-    Makeapp,
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
--}
-{-    
-p1 :: Program
-p1 =
-  Program
-   (Table $ Map.fromList [
-       ("main",    Info 0 25),
-       ("quadrat", Info 1 39)]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushval AsInt 1,
-    Pushval AsInt 3,
-    Pushpre "*",
-    Makeapp,
-    Makeapp,
-    Pushfun "quadrat",
-    Makeapp,
-    Pushfun "quadrat",
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 1,
-    Pushparam 2,
-    Pushpre "*",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return
-   ]
--}
