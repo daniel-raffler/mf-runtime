@@ -296,18 +296,25 @@ main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
 
 -- second a b = b
 -- main = second 1 2
-{-
+
 p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
-       ("main",   Info 0 4),
-       ("second", Info 2 12)]
+       ("second", Info 2 5),
+       ("main",   Info 0 10)]
    )
    [Reset,
     Pushfun "main",
-    Reduce,
+    Unwind,
+    Call,
     Halt,
+    
+    Pushparam 2,
+    Slide 3,
+    Unwind,
+    Call,
+    Return,
     
     Pushval AsInt 2,
     Pushval AsInt 1,
@@ -315,15 +322,11 @@ p1 =
     Makeapp,
     Makeapp,
     Slide 1,
-    Reduce,
-    Return,
-    
-    Pushparam 2,
-    Slide 3,
-    Reduce,
+    Unwind,
+    Call,
     Return
    ]
--}
+
 
 -- main = if False then 3 else 1
 {-
@@ -331,7 +334,7 @@ p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
-       ("main", Info 0 25)
+       ("main", Info 0 27)
        ]
    )
    [Reset,
@@ -344,6 +347,8 @@ p1 =
     Call,
     Operator N,
     Update N,
+    Unwind,
+    Call,
     Return,
     
     Pushparam 2,
@@ -385,8 +390,8 @@ p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
-       ("main",    Info 0 25),
-       ("quadrat", Info 1 39)]
+       ("main",    Info 0 27),
+       ("quadrat", Info 1 41)]
    )
    [Reset,
     Pushfun "main",
@@ -398,6 +403,8 @@ p1 =
     Call,
     Operator N,
     Update N,
+    Unwind,
+    Call,
     Return,
     
     Pushparam 2,
@@ -552,7 +559,7 @@ p1 =
 
 -- main = exp 2 5
 -- exp a b = if b == 0 then 1 else b * (exp a (pre b))
-
+{-
 p1 :: Program
 p1 =
   Program
@@ -641,3 +648,4 @@ p1 =
     Call,
     Return
    ]
+-}
