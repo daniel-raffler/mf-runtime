@@ -88,7 +88,7 @@ data Opcode
   | Update Args
   | Return
   | Halt
-  | NoOp
+--  | NoOp
   deriving (Show)
 
 newtype Table  = Table  (Map Var Info)
@@ -260,7 +260,7 @@ evalStep arity global (State heap stack addr) op =
             st1 = popK stack 2
             st2 = push st1 ret
     
-    NoOp -> State heap stack addr
+--     NoOp -> State heap stack addr
 
 evalAll :: Map Var Int -> Global -> Map Int Opcode -> State -> [(Opcode,State)]
 evalAll arity global mp st@(State heap stack addr) =
@@ -445,12 +445,11 @@ p1 =
    ]
 -}
 
-
 -- main = add 8 17
 -- add a b = if a == 0 then b else suc (add (pre a) b)
 -- pre a = -1 + a
 -- suc a =  1 + a
-
+{-
 p1 :: Program
 p1 =
   Program
@@ -537,10 +536,103 @@ p1 =
     Unwind,
     Call,
     Return,
-    
+     
     Pushval AsInt 17,
     Pushval AsInt 8,
     Pushfun "add",
+    Makeapp,
+    Makeapp,
+    Update (F 0),
+    Slide 1,
+    Unwind,
+    Call,
+    Return
+   ]
+-}
+
+-- main = exp 2 5
+-- exp a b = if b == 0 then 1 else b * (exp a (pre b))
+
+p1 :: Program
+p1 =
+  Program
+   (Table $ Map.fromList [
+       ("main", Info 0 63),
+       ("exp",  Info 2 37),
+       ("pre",  Info 1 27)]
+   )
+   [Reset,
+    Pushfun "main",
+    Call,
+    Halt,
+    
+    Pushparam 1,
+    Unwind,
+    Call,
+    Operator N,
+    Update N,
+    Unwind,
+    Call,
+    Return,
+    
+    Pushparam 2,
+    Unwind,
+    Call,
+    Operator (F 1),
+    Update N,
+    Return,
+    
+    Pushparam 2,
+    Unwind,
+    Call,
+    Pushparam 4,
+    Unwind,
+    Call,
+    Operator (F 2),
+    Update N,
+    Return,
+    
+    Pushval AsInt (-1),
+    Pushparam 2,
+    Pushpre "+",
+    Makeapp,
+    Makeapp,
+    Update (F 1),
+    Slide 2,
+    Unwind,
+    Call,
+    Return,
+    
+    Pushparam 2,
+    Pushfun "pre",
+    Makeapp,
+    Pushparam 2,
+    Pushfun "exp",
+    Makeapp,
+    Makeapp,
+    Pushparam 2,
+    Pushpre "*",
+    Makeapp,
+    Makeapp,
+    Pushval AsInt 1,
+    Pushparam 4,
+    Pushval AsInt 0,
+    Pushpre "==",
+    Makeapp,
+    Makeapp,
+    Pushpre "if",
+    Makeapp,
+    Makeapp,
+    Makeapp,
+    Update (F 2),
+    Slide 3,
+    Unwind,
+    Call,
+    Return,
+    
+    Pushval AsInt 5,
+    Pushval AsInt 2,
+    Pushfun "exp",
     Makeapp,
     Makeapp,
     Update (F 0),
