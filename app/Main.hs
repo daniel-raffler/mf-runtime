@@ -88,7 +88,7 @@ data Opcode
   | Update Args
   | Return
   | Halt
---  | NoOp
+  -- | NoOp
   deriving (Show)
 
 newtype Table  = Table  (Map Var Info)
@@ -260,7 +260,7 @@ evalStep arity global (State heap stack addr) op =
             st1 = popK stack 2
             st2 = push st1 ret
     
---     NoOp -> State heap stack addr
+    -- NoOp -> State heap stack addr
 
 evalAll :: Map Var Int -> Global -> Map Int Opcode -> State -> [(Opcode,State)]
 evalAll arity global mp st@(State heap stack addr) =
@@ -295,14 +295,56 @@ main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
   where arity = Map.fromList [("*",2),("+",2),("==",2),("if",3)]
 
 -- second a b = b
--- main = second 1 2
+-- main = second undefined 2
 
 p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
+       ("undefined", Info 0 5),
+       ("second",    Info 1 9),
+       ("main",      Info 0 15)]
+   )
+   [Reset,
+    Pushfun "main",
+    Unwind,
+    Call,
+    Halt,
+    
+    Pushval AsInt undefined,
+    Update (F 0),
+    Slide 1,
+    Return,
+    
+    Pushparam 2,
+    Update (F 2),
+    Slide 3,
+    Unwind,
+    Call,
+    Return,
+
+    Pushval AsInt 2,
+    Pushfun "undefined",
+    Pushfun "second",
+    Makeapp,
+    Makeapp,
+    Update (F 0),
+    Slide 1,
+    Unwind,
+    Call,
+    Return
+   ]
+
+
+-- second a b = b
+-- main = second 1 2
+{-
+p1 :: Program
+p1 =
+  Program
+   (Table $ Map.fromList [
        ("second", Info 2 5),
-       ("main",   Info 0 10)]
+       ("main",   Info 0 11)]
    )
    [Reset,
     Pushfun "main",
@@ -311,6 +353,7 @@ p1 =
     Halt,
     
     Pushparam 2,
+    Update (F 2),
     Slide 3,
     Unwind,
     Call,
@@ -321,12 +364,13 @@ p1 =
     Pushfun "second",
     Makeapp,
     Makeapp,
+    Update (F 0),
     Slide 1,
     Unwind,
     Call,
     Return
    ]
-
+-}
 
 -- main = if False then 3 else 1
 {-
