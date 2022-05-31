@@ -294,15 +294,54 @@ main :: IO ()
 main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
   where arity = Map.fromList [("*",2),("+",2),("==",2),("if",3)]
 
--- second a b = b
--- main = second undefined 2
+-- id a = a
+-- main = id undefined
 
 p1 :: Program
 p1 =
   Program
    (Table $ Map.fromList [
        ("undefined", Info 0 5),
-       ("second",    Info 1 9),
+       ("id",        Info 1 9),
+       ("main",      Info 0 15)]
+   )
+   [Reset,
+    Pushfun "main",
+    Unwind,
+    Call,
+    Halt,
+    
+    Pushval AsInt undefined,
+    Update (F 0),
+    Slide 1,
+    Return,
+    
+    Pushparam 1,
+    Update (F 1),
+    Slide 2,
+    Unwind,
+    Call,
+    Return,
+    
+    Pushfun "undefined",
+    Pushfun "id",
+    Makeapp,
+    Update (F 0),
+    Slide 1,
+    Unwind,
+    Call,
+    Return
+   ]
+
+-- second a b = b
+-- main = second undefined 2
+{-
+p1 :: Program
+p1 =
+  Program
+   (Table $ Map.fromList [
+       ("undefined", Info 0 5),
+       ("second",    Info 2 9),
        ("main",      Info 0 15)]
    )
    [Reset,
@@ -334,7 +373,7 @@ p1 =
     Call,
     Return
    ]
-
+-}
 
 -- second a b = b
 -- main = second 1 2
