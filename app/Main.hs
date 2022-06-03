@@ -335,9 +335,9 @@ p1 =
 
 -- second a b = b
 -- main = second undefined 2
-{-
-p1 :: Program
-p1 =
+
+p2 :: Program
+p2 =
   Program
    (Table $ Map.fromList [
        ("undefined", Info 0 5),
@@ -373,13 +373,12 @@ p1 =
     Call,
     Return
    ]
--}
 
 -- second a b = b
 -- main = second 1 2
-{-
-p1 :: Program
-p1 =
+
+p3 :: Program
+p3 =
   Program
    (Table $ Map.fromList [
        ("second", Info 2 5),
@@ -409,12 +408,11 @@ p1 =
     Call,
     Return
    ]
--}
 
 -- main = if False then 3 else 1
-{-
-p1 :: Program
-p1 =
+
+p4 :: Program
+p4 =
   Program
    (Table $ Map.fromList [
        ("main", Info 0 27)
@@ -464,13 +462,12 @@ p1 =
     Call,
     Return
    ]
--}
 
 -- quadrat x = x*x
 -- main = quadrat (quadrat (3*1))
-{-
-p1 :: Program
-p1 =
+
+p5 :: Program
+p5 =
   Program
    (Table $ Map.fromList [
        ("main",    Info 0 27),
@@ -533,15 +530,14 @@ p1 =
     Call,
     Return
    ]
--}
 
 -- main = add 8 17
 -- add a b = if a == 0 then b else suc (add (pre a) b)
 -- pre a = -1 + a
 -- suc a =  1 + a
-{-
-p1 :: Program
-p1 =
+
+p6 :: Program
+p6 =
   Program
    (Table $ Map.fromList [
        ("main", Info 0 71),
@@ -638,13 +634,12 @@ p1 =
     Call,
     Return
    ]
--}
 
 -- main = exp 2 5
 -- exp a b = if b == 0 then 1 else b * (exp a (pre b))
-{-
-p1 :: Program
-p1 =
+
+p7 :: Program
+p7 =
   Program
    (Table $ Map.fromList [
        ("main", Info 0 63),
@@ -731,4 +726,3 @@ p1 =
     Call,
     Return
    ]
--}
