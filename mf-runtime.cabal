@@ -7,8 +7,8 @@ cabal-version: 1.12
 name:           mf-runtime
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/daniel-raffler/mf-runtime#readme>
-homepage:       https://github.com/github.com/daniel-raffler#readme
-bug-reports:    https://github.com/github.com/daniel-raffler/issues
+homepage:       https://github.com/daniel-raffler/mf-runtime#readme
+bug-reports:    https://github.com/daniel-raffler/mf-runtime/issues
 author:         Daniel Raffler
 maintainer:     daniel-raffler@gmx.de
 copyright:      2022 Daniel Raffler
@@ -21,8 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/github.com/daniel-raffler
-  subdir: mf-runtime
+  location: https://github.com/daniel-raffler/mf-runtime
 
 library
   exposed-modules:

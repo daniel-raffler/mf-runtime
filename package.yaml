@@ -1,6 +1,6 @@
 name:                mf-runtime
 version:             0.1.0.0
-github:              "github.com/daniel-raffler/mf-runtime"
+github:              "daniel-raffler/mf-runtime"
 license:             OtherLicense
 author:              "Daniel Raffler"
 maintainer:          "daniel-raffler@gmx.de"
