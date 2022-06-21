@@ -1,10 +1,10 @@
-name:                mf-runtime
-version:             0.1.0.0
-github:              "daniel-raffler/mf-runtime"
-license:             OtherLicense
-author:              "Daniel Raffler"
-maintainer:          "daniel-raffler@gmx.de"
-copyright:           "2022 Daniel Raffler"
+name:       mf-runtime
+version:    0.1.0.0
+github:     "daniel-raffler/mf-runtime"
+license:    OtherLicense
+author:     "Daniel Raffler"
+maintainer: "daniel-raffler@gmx.de"
+copyright:  "2022 Daniel Raffler"
 
 extra-source-files:
 - README.md
@@ -17,14 +17,12 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/daniel-raffler/mf-runtime#readme>
+
+description: Please see the README on GitHub at <https://github.com/daniel-raffler/mf-runtime#readme>
 
 dependencies:
 - base >= 4.7 && < 5
 - containers
-
-library:
-  source-dirs: src
 
 executables:
   mf-runtime-exe:
@@ -34,16 +32,3 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - mf-runtime
-
-tests:
-  mf-runtime-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - mf-runtime

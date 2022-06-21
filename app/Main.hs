@@ -1,3 +1,4 @@
+
 -- mf-runtime
 --
 -- Licensed under Creative Commons Legal Code
@@ -18,8 +19,6 @@ import qualified Control.Arrow as Arrow
 
 import Data.Map (Map, (!))
 import Data.Function (on)
-
-import Lib
 
 type Addr = Int
 type Var  = [Char]
@@ -88,7 +87,6 @@ data Opcode
   | Update Args
   | Return
   | Halt
-  -- | NoOp
   deriving (Show)
 
 newtype Table  = Table  (Map Var Info)
