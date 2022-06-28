@@ -234,7 +234,7 @@ evalStep global (State heap stack ip) op =
     
     Operator k -> State heap' st2 ip
       where -- stack (k=0) [          op,ret,f                  ]
-            -- stack (k=1) [val1,     op,ret,f,(- arg1)         ]
+            -- stack (k=1) [     val1,op,ret,f,(- arg1)         ]
             -- stack (k=2) [val1,val2,op,ret,f,(- arg1),(- arg2)]
             -- ..
             vals             = map (peek stack) [0..k-1]
