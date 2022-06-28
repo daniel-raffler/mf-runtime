@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 
 -- mf-runtime
 --
@@ -12,265 +13,262 @@ module Main where
 
 import Debug.Trace
 
-import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.List      as List
+import qualified Data.Map       as Map
+import qualified Data.Text.Lazy as Text
 
 import qualified Control.Arrow as Arrow
+import qualified Options.Applicative as OptA
 
+import Data.Text.Lazy (Text)
 import Data.Map (Map, (!))
 import Data.Function (on)
 
-type Addr = Int
-type Var  = [Char]
+import MachineF
 
-data Element
-  = --Lit  Int
-   Ref  Addr
-  | Cont Addr
-  | Op   Var
+type ROpc  = MachineF.Addr
+type RHeap = Int
+
+newtype Code = Code (Map.Map ROpc Opcode)
   deriving (Show)
 
-newtype Stack = Stack [Element] deriving (Show)
+prefetch :: ROpc -> Code -> Opcode
+prefetch p (Code ops) = ops!p
 
-mkStack :: Stack
-mkStack = Stack []
+mkCode :: Program -> Code
+mkCode (Program _ _ code) = Code (Map.fromList $ zip [0..] code)
 
-push :: Stack -> Element -> Stack
-push (Stack ls) e = Stack (e:ls)
-
-peek :: Stack -> Int ->  Element
-peek (Stack ls) k = ls!!k
-
-popK :: Stack -> Int -> Stack
-popK (Stack ls) k = Stack $ List.drop k ls
-
-data Type
-  = AsBool
-  | AsInt
+newtype Env = Env (Map Id RHeap)
   deriving (Show)
-
-data Info = Info Int Addr deriving (Show)
 
 data Closure
   = Def Info
-  | App Addr Addr
-  | Ind Addr
-  | Pre Var Int
-  | Val Type Int
+  | App RHeap RHeap
+  | Ind RHeap
+  | Pre Id Int
+  | Val Value
   deriving (Show)
 
-data Heap = Heap [Addr] (Map.Map Addr Closure)
+data Heap = Heap [RHeap] (Map.Map RHeap Closure)
+  deriving (Show)
 
-mkHeap :: Heap
-mkHeap = Heap [0..] Map.empty
+newHeap :: Heap
+newHeap = Heap [0..] Map.empty
 
-alloc :: Heap -> Closure -> (Heap, Addr)
-alloc (Heap (k0:kx) bindings) cl =
-  (Heap kx $ Map.insert k0 cl bindings, k0)
+alloc :: Heap -> Closure -> (Heap, RHeap)
+alloc (Heap (k0:kx) bindings) cl = (Heap kx (Map.insert k0 cl bindings), k0)
 
-lookUp :: Heap -> Addr -> Closure
+update :: Heap -> RHeap -> RHeap -> Heap
+update (Heap kx bindings) r1 r2 =
+  Heap kx $ Map.insert r1 (Ind r2) bindings
+
+lookUp :: Heap -> RHeap -> Closure
 lookUp (Heap kx bindings) addr = bindings!addr
 
-data Args = N | F Int deriving (Show)
+mkHeap :: Program -> [Value] -> (Env, Heap)
+mkHeap (Program _ info _) args
+  = static (unzip $
+     -- ("undefined", Pre "#undefined" 0) :
+      [(var, Def k) | k@(Info var arity addr) <- info] ++
+      zip [Text.pack ('.' : show k) | k <- [1..]] (map Val args)
+      )
+  where static (vars,cls) = (Env $ Map.fromList $ zip vars addrs, heap)
+          where (heap, addrs) = List.mapAccumL alloc newHeap cls
 
-data Opcode
-  = Reset
-  | Pushval Type Int
-  | Pushfun Var
-  | Pushpre Var
-  | Pushparam Int
-  | Makeapp
-  | Unwind
-  | Call
-  | Operator Args
-  | Slide Int
-  | Update Args
-  | Return
-  | Halt
+data Cell
+  = Ref  RHeap
+  | Cont ROpc
+  | Op   Id
   deriving (Show)
 
-newtype Table  = Table  (Map Var Info)
-newtype Global = Global (Map Var Addr)
+newtype Stack = Stack [Cell]
+  deriving (Show)
 
-data Program = Program Table [Opcode]
+newStack :: Stack
+newStack = Stack []
 
-loadCode :: Program -> Map Int Opcode
-loadCode (Program table opcodes) = Map.fromList $ zip [0..] opcodes
+push :: Stack -> Cell -> Stack
+push (Stack st) e = Stack (e:st)
 
-loadDefs :: Program -> (Heap, Global)
-loadDefs (Program (Table info) opcodes) = Arrow.second wrapper $
-                                          List.mapAccumL alloc mkHeap [Def f0 | f0 <- Map.elems info]
-  where wrapper = Global . Map.fromList . zip (Map.keys info)
+peek :: Stack -> Int -> Cell
+peek (Stack st) k = st!!k
 
-data State = State Heap Stack Addr
+popK :: Stack -> Int -> Stack
+popK (Stack st) k = Stack $ List.drop k st
 
-getAddr :: Global -> Var -> Addr
-getAddr (Global gl) f = gl!f
+mkStack :: Stack
+mkStack = undefined
 
-getArg :: Heap -> Addr -> Addr
-getArg heap addr = b
+data State = State Heap Stack ROpc
+  deriving (Show)
+
+getAddr :: Env -> Id -> RHeap
+getAddr (Env global) var = global!var
+
+getArgs :: Heap -> RHeap -> RHeap
+getArgs heap addr = b
   where (App a b) = lookUp heap addr
 
-getValue :: Heap -> Addr -> Closure
+getValue :: Heap -> RHeap -> Closure
 getValue heap addr =
   case lookUp heap addr of
     Ind ref -> getValue heap ref
     val     -> val
 
-toBool val = if val == 1 then True else False
-toInt  val = if val then 1 else 0
+getEntryPoint :: Env -> Heap -> Id -> ROpc
+getEntryPoint global heap var = entrypoint $ getValue heap $ getAddr global var
+  where entrypoint (Def (Info _ _  code)) = code
 
-applyOp1 :: Heap -> Element -> Element -> (Heap, Addr)
-applyOp1 heap op (Ref a) =
-  let applyAll (Op "~"  ) (Val AsInt  n) = alloc heap $ Val AsInt $ (0 -) n
-      applyAll (Op "not") (Val AsBool n) = alloc heap $ Val AsInt $ toInt $ not $ toBool n
-      
-      --applyAll op n = trace (show op ++ show n) undefined
-  in applyAll op (getValue heap a)
+mkState :: Program -> [Value] -> (Env, State)
+mkState pr args = (global, State heap mkStack $ getEntryPoint global heap "@entry")
+  where (global, heap) = mkHeap pr args
 
-applyOp2 :: Heap -> Element -> Element -> Element -> (Heap, Addr)
-applyOp2 heap op (Ref a) (Ref b) =
-  let applyInt (Op op) (Val AsInt n) (Val AsInt m) | op `elem` ["*", "div", "mod", "+", "-"]
-        = alloc heap $ Val AsInt $ (opInt op) n m
-        where opInt :: [Char] -> Int -> Int -> Int
-              opInt "*"   = (*)
-              opInt "div" = div
-              opInt "mod" = mod
-              opInt "+"   = (+)
-              opInt "-"   = (-)
-      
-      applyInt (Op op) (Val AsInt n) (Val AsInt m) | op `elem` ["<", "<=", "==", ">", ">="]
-        = alloc heap $ Val AsBool $ toInt $ (opInt op) n m
-        where opInt :: [Char] -> Int -> Int -> Bool
-              opInt "<"  = (<)
-              opInt "<=" = (<=)
-              opInt "==" = (==)
-              opInt ">"  = (>)
-              opInt ">=" = (>)
-      
-      --applyInt op n m = trace (show op ++ show n ++ show m) undefined
-      applyBool (Op op) (Val AsBool n) (Val AsBool m)
-        = alloc heap $ Val AsBool $ toInt $ (opBool op) (toBool n) (toBool m)
-        where opBool :: [Char] -> Bool -> Bool -> Bool
-              opBool "&&" = (&&)
-              opBool "||" = (||)
-      
-      applyAll (Op op) n m | op `elem` ["&&","||"] = applyBool (Op op) n m
-                           | otherwise             = applyInt  (Op op) n m 
+appIte :: Heap -> Cell -> Cell -> Cell -> RHeap
+appIte heap (Ref a) (Ref b) (Ref c) = on (apply $ getValue heap a) (getArgs heap) b c
+  where apply (Val (VBool val)) arg1 arg2 = if val then arg1 else arg2
 
-      --applyAll op n m = trace (show op ++ show n ++ show m) undefined
-  in applyAll op (getValue heap a) (getValue heap b)
+appNullary :: Heap -> Cell -> (Heap, RHeap)
+appNullary heap (Op "#undefined") = alloc heap $ Val undefined
 
-applyIf :: Heap -> Element -> Element -> Element -> Addr
-applyIf heap (Ref a) (Ref b) (Ref c) = on (apply $ getValue heap a) (getArg heap) b c
-  where apply (Val AsBool val) arg1 arg2 = if toBool val then arg1 else arg2
+appUnary :: Heap -> Cell -> Cell -> (Heap, RHeap)
+appUnary heap op (Ref a) = applyAll op (getValue heap a)
+  where applyAll (Op "-"  ) (Val (VInt  n)) = alloc heap $ Val $ VInt (-n)
+        applyAll (Op "not") (Val (VBool n)) = alloc heap $ Val $ VBool (not n)
 
-update (Heap kx bindings) r1 r2 =
-  Heap kx $ Map.insert r1 (Ind r2) bindings
-    
-evalStep :: Map Var Int -> Global -> State -> Opcode -> State
-evalStep arity global (State heap stack addr) op =
+appBinary :: Heap -> Cell -> Cell -> Cell -> (Heap, RHeap)
+appBinary heap op (Ref a) (Ref b) = applyAll op (getValue heap a) (getValue heap b)
+  where applyAll (Op op) n m | op `elem` ["&&","||"] = applyBool (Op op) n m
+                             | otherwise             = applyInt  (Op op) n m
+        
+        applyInt (Op op) (Val (VInt n)) (Val (VInt m)) | op `elem` ["*", "div", "mod", "+", "-"]
+          = alloc heap $ Val $ VInt $ (opInt op) n m
+          where opInt :: Text -> Int -> Int -> Int
+                opInt "*"   = (*)
+                opInt "div" = div
+                opInt "mod" = mod
+                opInt "+"   = (+)
+                opInt "-"   = (-)
+        
+        applyInt (Op op) (Val (VInt n)) (Val (VInt m)) | op `elem` ["<", "<=", "==", ">", ">="]
+          = alloc heap $ Val $ VBool $ (opInt op) n m
+          where opInt :: Text -> Int -> Int -> Bool
+                opInt "<"  = (<)
+                opInt "<=" = (<=)
+                opInt "==" = (==)
+                opInt ">"  = (>)
+                opInt ">=" = (>)
+        
+        applyBool (Op op) (Val (VBool n)) (Val (VBool m))
+          = alloc heap $ Val $ VBool $ (opBool op) n m
+          where opBool :: Text -> Bool -> Bool -> Bool
+                opBool "&&" = (&&)
+                opBool "||" = (||)
+
+appK :: Heap -> Cell -> [Cell] -> (Heap, RHeap)
+appK heap op []    = appNullary heap op
+appK heap op [a]   = appUnary   heap op a
+appK heap op [a,b] = appBinary  heap op a b
+
+evalStep :: Env -> State -> Opcode -> State
+evalStep global (State heap stack ip) op =
   case op of
-    Reset -> State heap mkStack addr
+    Reset -> State heap newStack ip
     
-    Pushval typ val -> State heap' stack' addr
-      where (heap', ref) = alloc heap $ Val typ val
-            stack' = push stack (Ref ref)
+    Pushval val -> State heap' stack' ip
+      where (heap', ref)     = alloc heap $ Val val
+            stack'           = push stack (Ref ref)
     
-    Pushfun f -> State heap stack' addr
-      where ref = getAddr global f
-            stack' = push stack (Ref ref)
+    Pushfun var -> State heap stack' ip
+      where ref              = getAddr global var
+            stack'           = push stack (Ref ref)
     
-    Pushpre op -> State heap' stack' addr
-      where (heap', cl) = alloc heap $ Pre op (arity!op)
-            stack' = push stack $ Ref cl
+    Pushpre op -> State heap' stack' ip
+      where (heap', cl)      = alloc heap $ Pre op $ if op == "#undefined" then 0 else MachineF.arity op
+            stack'           = push stack $ Ref cl
     
-    Pushparam k -> State heap stack' addr
-      where Ref a = peek stack (1+k)
-            stack' = push stack (Ref $ getArg heap a)
+    Pushparam k -> State heap stack' ip
+      where Ref a            = peek stack (1+k)
+            stack'           = push stack (Ref $ getArgs heap a)
     
-    Makeapp -> State heap' st2 addr
-      where [Ref a, Ref b] = map (peek stack) [0,1]
-            (heap', cl) = alloc heap $ App a b
-            st1 = popK stack 2
-            st2 = push st1 $ Ref cl
+    Makeapp -> State heap' st2 ip
+      where [Ref a, Ref b]   = map (peek stack) [0,1]
+            (heap', cl)      = alloc heap $ App a b
+            st1              = popK stack 2
+            st2              = push st1 $ Ref cl
     
-    Unwind ->
-      case getValue heap r of
-        App a b   -> State heap (push stack $ Ref a) (addr-1)
-        otherwise -> State heap stack addr
-      where Ref r = peek stack 0
+    Unwind -> let Ref r = peek stack 0
+      in case getValue heap r of
+           App a b   -> State heap (push stack $ Ref a) (ip-1)
+           otherwise -> State heap stack ip
     
-    Call ->
-      case getValue heap r of
-        Val typ val -> State heap stack addr
-        Def (Info arity entry) -> State heap stack' entry
-          where stack' = push stack $ Cont addr
-        Pre op 1 -> State heap st2 12
-          where st1 = push stack $ Cont addr
-                st2 = push st1 $ Op op
-        Pre op 2 -> State heap st2 18
-          where st1 = push stack $ Cont addr
-                st2 = push st1 $ Op op
-        Pre "if" _ -> State heap stack' 4
-          where stack' = push stack $ Cont addr
-      where Ref r = peek stack 0
+    Call -> let Ref r = peek stack 0
+      in case getValue heap r of
+           Val val -> State heap stack ip
+           
+           Def (Info var arity entry) -> State heap stack' entry
+             where stack' = push stack $ Cont ip
+           
+           Pre op (-1) -> State heap stack' $ getEntryPoint global heap "@ite"
+             where stack' = push stack $ Cont ip
+           
+           Pre op 0 -> State heap st2 $ getEntryPoint global heap "@nullary"
+             where st1    = push stack $ Cont ip
+                   st2    = push st1 $ Op op
+           
+           Pre op 1 -> State heap st2 $ getEntryPoint global heap "@unary"
+             where st1    = push stack $ Cont ip
+                   st2    = push st1 $ Op op
+           
+           Pre op 2 -> State heap st2 $ getEntryPoint global heap "@binary"
+             where st1    = push stack $ Cont ip
+                   st2    = push st1 $ Op op
     
-    Operator N -> State heap st2 addr
+    Operator (-1) -> State heap st2 ip
       where -- stack: [val,ret,f,(- arg),(- arg1),(- arg2)]
-            [val,ret,arg1,arg2] = map (peek stack) [0,1,4,5]
-            cl = applyIf heap val arg1 arg2
-            stack' = popK stack 5
-            st1 = push stack' ret
-            st2 = push st1 $ Ref cl
+            [val,ret]        = map (peek stack) [0,1]
+            [arg1,arg2]      = map (peek stack) [4,5]
+            cl               = appIte heap val arg1 arg2
+            stack'           = popK stack 5
+            st1              = push stack' ret
+            st2              = push st1 $ Ref cl
     
-    Operator (F 1) -> State heap' st2 addr
-      where -- stack: [val1,op,ret,f,(- arg1)]
-            [val1,op,ret] = map (peek stack) [0..2]
-            (heap', cl) = applyOp1 heap op val1
-            stack' = popK stack 4
-            st1 = push stack' ret
-            st2 = push st1 $ Ref cl
+    Operator k -> State heap' st2 ip
+      where -- stack (k=0) [          op,ret,f                  ]
+            -- stack (k=1) [val1,     op,ret,f,(- arg1)         ]
+            -- stack (k=2) [val1,val2,op,ret,f,(- arg1),(- arg2)]
+            -- ..
+            vals             = map (peek stack) [0..k-1]
+            [op,ret]         = map (peek stack) [k,k+1]
+            (heap', cl)      = appK heap op vals
+            stack'           = popK stack (2*(k+1))
+            st1              = push stack' ret
+            st2              = push st1 $ Ref cl
     
-    Operator (F 2) -> State heap' st2 addr
-      where -- stack: [val1,val2,op,ret,f,(- arg1),(- arg2)]
-            [val1,val2,op,ret] = map (peek stack) [0..3]
-            (heap', cl) = applyOp2 heap op val1 val2
-            stack' = popK stack 6
-            st1 = push stack' ret
-            st2 = push st1 $ Ref cl
-    
-    Update N -> evalStep arity global st1 (Slide 1)
-      where st1 = evalStep arity global (State heap stack addr) $ Update (F 0)
-    
-    Update (F k) -> State heap' stack addr
+    Update k -> State heap' stack ip
       where [Ref r1, Ref r2] = map (peek stack) [2+k, 0]
-            heap' = update heap r1 r2
+            heap'            = update heap r1 r2
     
-    Slide k -> State heap st2 addr
-      where [a,b]  = map (peek stack) [0,1]
-            stack' = popK stack (2+k)
-            st1 = push stack' b
-            st2 = push st1 a
+    Slide k -> State heap st2 ip
+      where [a,b]            = map (peek stack) [0,1]
+            stack'           = popK stack (2+k)
+            st1              = push stack' b
+            st2              = push st1 a
     
-    Return -> State heap st2 addr'
-      where [ret, Cont addr'] = map (peek stack) [0,1]
-            st1 = popK stack 2
-            st2 = push st1 ret
-    
-    -- NoOp -> State heap stack addr
+    Return -> State heap st2 ip'
+      where [val, Cont ip']  = map (peek stack) [0,1]
+            st1              = popK stack 2
+            st2              = push st1 val
 
-evalAll :: Map Var Int -> Global -> Map Int Opcode -> State -> [(Opcode,State)]
-evalAll arity global mp st@(State heap stack addr) =
-  case mp!addr of
-    Halt -> [(Halt, st)]
-    op   -> (op, st) :
-      (evalAll arity global mp $
-       evalStep arity global (State heap stack (1+addr)) op)
+evalAll :: Code -> Env -> State -> [(Opcode,State)]
+evalAll code global state@(State heap stack ip) =
+  case prefetch ip code of
+    Halt -> [(Halt, state)]
+    op   ->  (op, state) :
+      (evalAll code global $
+        evalStep global (State heap stack (1+ip)) op)
 
-runProgram :: Map Var Int -> Program -> [(Opcode, State)]
-runProgram arity pr = evalAll arity global (loadCode pr) (State heap undefined 0) 
-  where (heap, global) = loadDefs pr
+evalProgram :: Program -> [Value] -> [(Opcode, State)]
+evalProgram pr args = uncurry (evalAll $ mkCode pr) (mkState pr args)
 
 showBindings (Heap kx bindings)
   = concatMap (uncurry pretty) $ zip ("  heap: " : repeat "        ") $ Map.assocs bindings
@@ -288,439 +286,52 @@ showState (n, (op, State heap stack addr)) =
   showBindings heap ++ "\n" ++
   show op ++ " (@" ++ show addr ++ ")"
 
+showValue (VInt  v) = show v
+showValue (VBool v) = show v
+        
+showResult (op, State heap (Stack [Ref ret]) ip) = showValue value
+  where (Val value) = getValue heap ret
+
+buildOutput steps states =
+  if steps
+  then concatMap showState $ zip [0..] states
+  else showResult $ last states
+
+withArgs :: Options -> IO ()
+withArgs (Options steps path args) =
+  do pr <- MachineF.fromFile path
+     putStrLn $ buildOutput steps $ evalProgram pr args
+
+-- | Command line options
+data Options = Options Bool FilePath [Value]
+
+parseValue :: OptA.ReadM Value
+parseValue = OptA.eitherReader (Right <$> pVal)
+  where pVal "true"  = VBool True
+        pVal "false" = VBool False
+        pVal k       = VInt (read k)
+
+commandline
+  = Options
+    <$> OptA.switch (
+          OptA.long "steps" <>
+          OptA.short 's' <>
+          OptA.help "Show evaluation steps"
+          )
+    <*> OptA.argument OptA.str (
+          OptA.metavar "FILE" <>
+          OptA.help "Path to the exe file"
+          )
+    <*> (OptA.many $
+           OptA.argument parseValue (
+            OptA.metavar "ARGS" <>
+            OptA.help "Arguments to the main function"
+            ))
+
 main :: IO ()
-main = putStrLn $ concatMap showState $ zip [0..] $ runProgram arity p1
-  where arity = Map.fromList [("*",2),("+",2),("==",2),("if",3)]
-
--- id a = a
--- main = id undefined
-
-p1 :: Program
-p1 =
-  Program
-   (Table $ Map.fromList [
-       ("undefined", Info 0 5),
-       ("id",        Info 1 9),
-       ("main",      Info 0 15)]
-   )
-   [Reset,
-    Pushfun "main",
-    Unwind,
-    Call,
-    Halt,
-    
-    Pushval AsInt undefined,
-    Update (F 0),
-    Slide 1,
-    Return,
-    
-    Pushparam 1,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushfun "undefined",
-    Pushfun "id",
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- second a b = b
--- main = second undefined 2
-
-p2 :: Program
-p2 =
-  Program
-   (Table $ Map.fromList [
-       ("undefined", Info 0 5),
-       ("second",    Info 2 9),
-       ("main",      Info 0 15)]
-   )
-   [Reset,
-    Pushfun "main",
-    Unwind,
-    Call,
-    Halt,
-    
-    Pushval AsInt undefined,
-    Update (F 0),
-    Slide 1,
-    Return,
-    
-    Pushparam 2,
-    Update (F 2),
-    Slide 3,
-    Unwind,
-    Call,
-    Return,
-
-    Pushval AsInt 2,
-    Pushfun "undefined",
-    Pushfun "second",
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- second a b = b
--- main = second 1 2
-
-p3 :: Program
-p3 =
-  Program
-   (Table $ Map.fromList [
-       ("second", Info 2 5),
-       ("main",   Info 0 11)]
-   )
-   [Reset,
-    Pushfun "main",
-    Unwind,
-    Call,
-    Halt,
-    
-    Pushparam 2,
-    Update (F 2),
-    Slide 3,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushval AsInt 2,
-    Pushval AsInt 1,
-    Pushfun "second",
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- main = if False then 3 else 1
-
-p4 :: Program
-p4 =
-  Program
-   (Table $ Map.fromList [
-       ("main", Info 0 27)
-       ]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 1,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushval AsInt 1,
-    Pushval AsInt 3,
-    Pushval AsBool (toInt False),
-    Pushpre "if",
-    Makeapp,
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- quadrat x = x*x
--- main = quadrat (quadrat (3*1))
-
-p5 :: Program
-p5 =
-  Program
-   (Table $ Map.fromList [
-       ("main",    Info 0 27),
-       ("quadrat", Info 1 41)]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 1,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushval AsInt 1,
-    Pushval AsInt 3,
-    Pushpre "*",
-    Makeapp,
-    Makeapp,
-    Pushfun "quadrat",
-    Makeapp,
-    Pushfun "quadrat",
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 1,
-    Pushparam 2,
-    Pushpre "*",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- main = add 8 17
--- add a b = if a == 0 then b else suc (add (pre a) b)
--- pre a = -1 + a
--- suc a =  1 + a
-
-p6 :: Program
-p6 =
-  Program
-   (Table $ Map.fromList [
-       ("main", Info 0 71),
-       ("add",  Info 2 47),
-       ("suc",  Info 1 37),
-       ("pre",  Info 1 27)]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 1,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushval AsInt (-1),
-    Pushparam 2,
-    Pushpre "+",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushval AsInt 1,
-    Pushparam 2,
-    Pushpre "+",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Pushparam 2,
-    Pushfun "pre",
-    Makeapp,
-    Pushfun "add",
-    Makeapp,
-    Makeapp,
-    Pushfun "suc",
-    Makeapp,
-    Pushparam 3,
-    Pushval AsInt 0,
-    Pushparam 4,
-    Pushpre "==",
-    Makeapp,
-    Makeapp,
-    Pushpre "if",
-    Makeapp,
-    Makeapp,
-    Makeapp,
-    Update (F 2),
-    Slide 3,
-    Unwind,
-    Call,
-    Return,
-     
-    Pushval AsInt 17,
-    Pushval AsInt 8,
-    Pushfun "add",
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
-
--- main = exp 2 5
--- exp a b = if b == 0 then 1 else b * (exp a (pre b))
-
-p7 :: Program
-p7 =
-  Program
-   (Table $ Map.fromList [
-       ("main", Info 0 63),
-       ("exp",  Info 2 37),
-       ("pre",  Info 1 27)]
-   )
-   [Reset,
-    Pushfun "main",
-    Call,
-    Halt,
-    
-    Pushparam 1,
-    Unwind,
-    Call,
-    Operator N,
-    Update N,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Operator (F 1),
-    Update N,
-    Return,
-    
-    Pushparam 2,
-    Unwind,
-    Call,
-    Pushparam 4,
-    Unwind,
-    Call,
-    Operator (F 2),
-    Update N,
-    Return,
-    
-    Pushval AsInt (-1),
-    Pushparam 2,
-    Pushpre "+",
-    Makeapp,
-    Makeapp,
-    Update (F 1),
-    Slide 2,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushparam 2,
-    Pushfun "pre",
-    Makeapp,
-    Pushparam 2,
-    Pushfun "exp",
-    Makeapp,
-    Makeapp,
-    Pushparam 2,
-    Pushpre "*",
-    Makeapp,
-    Makeapp,
-    Pushval AsInt 1,
-    Pushparam 4,
-    Pushval AsInt 0,
-    Pushpre "==",
-    Makeapp,
-    Makeapp,
-    Pushpre "if",
-    Makeapp,
-    Makeapp,
-    Makeapp,
-    Update (F 2),
-    Slide 3,
-    Unwind,
-    Call,
-    Return,
-    
-    Pushval AsInt 5,
-    Pushval AsInt 2,
-    Pushfun "exp",
-    Makeapp,
-    Makeapp,
-    Update (F 0),
-    Slide 1,
-    Unwind,
-    Call,
-    Return
-   ]
+main = withArgs =<< OptA.execParser opts
+  where opts = OptA.info (OptA.helper <*> commandline) (
+                 OptA.fullDesc <>
+                 OptA.header "mf-runtime - runtime for f programs" <>
+                 OptA.progDesc "Evaluate the program for the given arguments"
+                 )

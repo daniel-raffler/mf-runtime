@@ -3,7 +3,18 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    name: mf-library
+    version: 0.1.0.0
+    git: https://github.com/daniel-raffler/mf-library.git
+    pantry-tree:
+      size: 642
+      sha256: 16b44497d97e34e5c44facacab58e938d885e55a79cec85d7913eff19f6ed042
+    commit: 15f2aa0e977d91e291dc1d3f52f967b7f0d5ee8b
+  original:
+    git: https://github.com/daniel-raffler/mf-library.git
+    commit: 15f2aa0e977d91e291dc1d3f52f967b7f0d5ee8b
 snapshots:
 - completed:
     size: 616897

@@ -33,4 +33,7 @@ executable mf-runtime-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , mf-library
+    , optparse-applicative
+    , text
   default-language: Haskell2010
