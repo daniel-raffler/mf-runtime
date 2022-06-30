@@ -11,8 +11,6 @@
 
 module Main where
 
-import Debug.Trace
-
 import qualified Data.List      as List
 import qualified Data.Map       as Map
 import qualified Data.Text.Lazy as Text
@@ -68,7 +66,7 @@ lookUp (Heap kx bindings) addr = bindings!addr
 mkHeap :: Program -> [Value] -> (Env, Heap)
 mkHeap (Program _ info _) args
   = static (unzip $
-     -- ("undefined", Pre "#undefined" 0) :
+      ("undefined", Ind 0) :
       [(var, Def k) | k@(Info var arity addr) <- info] ++
       zip [Text.pack ('.' : show k) | k <- [1..]] (map Val args)
       )
@@ -127,9 +125,6 @@ appIte :: Heap -> Cell -> Cell -> Cell -> RHeap
 appIte heap (Ref a) (Ref b) (Ref c) = on (apply $ getValue heap a) (getArgs heap) b c
   where apply (Val (VBool val)) arg1 arg2 = if val then arg1 else arg2
 
-appNullary :: Heap -> Cell -> (Heap, RHeap)
-appNullary heap (Op "#undefined") = alloc heap $ Val undefined
-
 appUnary :: Heap -> Cell -> Cell -> (Heap, RHeap)
 appUnary heap op (Ref a) = applyAll op (getValue heap a)
   where applyAll (Op "-"  ) (Val (VInt  n)) = alloc heap $ Val $ VInt (-n)
@@ -139,7 +134,7 @@ appBinary :: Heap -> Cell -> Cell -> Cell -> (Heap, RHeap)
 appBinary heap op (Ref a) (Ref b) = applyAll op (getValue heap a) (getValue heap b)
   where applyAll (Op op) n m | op `elem` ["&&","||"] = applyBool (Op op) n m
                              | otherwise             = applyInt  (Op op) n m
-        
+       
         applyInt (Op op) (Val (VInt n)) (Val (VInt m)) | op `elem` ["*", "div", "mod", "+", "-"]
           = alloc heap $ Val $ VInt $ (opInt op) n m
           where opInt :: Text -> Int -> Int -> Int
@@ -165,7 +160,6 @@ appBinary heap op (Ref a) (Ref b) = applyAll op (getValue heap a) (getValue heap
                 opBool "||" = (||)
 
 appK :: Heap -> Cell -> [Cell] -> (Heap, RHeap)
-appK heap op []    = appNullary heap op
 appK heap op [a]   = appUnary   heap op a
 appK heap op [a,b] = appBinary  heap op a b
 
@@ -183,7 +177,7 @@ evalStep global (State heap stack ip) op =
             stack'           = push stack (Ref ref)
     
     Pushpre op -> State heap' stack' ip
-      where (heap', cl)      = alloc heap $ Pre op $ if op == "#undefined" then 0 else MachineF.arity op
+      where (heap', cl)      = alloc heap $ Pre op $ MachineF.arity op
             stack'           = push stack $ Ref cl
     
     Pushparam k -> State heap stack' ip
@@ -210,10 +204,6 @@ evalStep global (State heap stack ip) op =
            
            Pre op (-1) -> State heap stack' $ getEntryPoint global heap "@ite"
              where stack' = push stack $ Cont ip
-           
-           Pre op 0 -> State heap st2 $ getEntryPoint global heap "@nullary"
-             where st1    = push stack $ Cont ip
-                   st2    = push st1 $ Op op
            
            Pre op 1 -> State heap st2 $ getEntryPoint global heap "@unary"
              where st1    = push stack $ Cont ip
@@ -288,8 +278,8 @@ showState (n, (op, State heap stack addr)) =
 
 showValue (VInt  v) = show v
 showValue (VBool v) = show v
-        
-showResult (op, State heap (Stack [Ref ret]) ip) = showValue value
+
+showResult (op, State heap (Stack [Ref ret]) ip) = "→ " ++ showValue value
   where (Val value) = getValue heap ret
 
 buildOutput steps states =
@@ -307,8 +297,8 @@ data Options = Options Bool FilePath [Value]
 
 parseValue :: OptA.ReadM Value
 parseValue = OptA.eitherReader (Right <$> pVal)
-  where pVal "true"  = VBool True
-        pVal "false" = VBool False
+  where pVal "True"  = VBool True
+        pVal "False" = VBool False
         pVal k       = VInt (read k)
 
 commandline
@@ -333,5 +323,5 @@ main = withArgs =<< OptA.execParser opts
   where opts = OptA.info (OptA.helper <*> commandline) (
                  OptA.fullDesc <>
                  OptA.header "mf-runtime - runtime for f programs" <>
-                 OptA.progDesc "Evaluate the program for the given arguments"
+                 OptA.progDesc "Run exe with the provided arguments for main"
                  )
